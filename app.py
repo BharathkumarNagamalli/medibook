@@ -1,11 +1,16 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3, random, string, smtplib, json, os
+import os, sqlite3, random, string, smtplib, json, urllib.request, urllib.error
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-from functools import wraps
 from pathlib import Path
+from functools import wraps
+
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from werkzeug.security import generate_password_hash, check_password_hash
 
 try:
     from dotenv import load_dotenv
@@ -22,16 +27,22 @@ if env_path.exists():
                 k, v = line.split('=', 1)
                 os.environ[k.strip()] = v.strip().strip("'").strip('"')
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "medibook_secret_2026_xK9#mL")
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "medibook_secret_2026_xK9#mL"))
+
+templates = Jinja2Templates(directory="templates")
+
+# Try mounting static if exists
+if Path("static").exists():
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 DB = "medibook.db"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@medibook.com")
 SMTP_HOST   = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT   = int(os.environ.get("SMTP_PORT", 587))
-SMTP_USER   = os.environ.get("SMTP_USER", "")          # set your gmail
-SMTP_PASS   = os.environ.get("SMTP_PASS", "")          # set app password
+SMTP_USER   = os.environ.get("SMTP_USER", "")          
+SMTP_PASS   = os.environ.get("SMTP_PASS", "")          
 OPENAI_KEY     = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 GMAPS_KEY      = os.environ.get("GMAPS_API_KEY", "")
@@ -53,7 +64,7 @@ CATEGORIES = ["General Checkup", "Follow-up", "Dental", "Eye Exam",
 
 # ── DATABASE ──────────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -98,30 +109,51 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        # Seed admin
         admin_pw = generate_password_hash("admin123")
         c.execute("""INSERT OR IGNORE INTO users (name,email,password,is_admin,is_verified)
                      VALUES ('Admin','admin@medibook.com',?,1,1)""", (admin_pw,))
         c.commit()
 
-# ── AUTH HELPERS ──────────────────────────────────────────────────────────────
-def login_required(f):
-    @wraps(f)
-    def wrap(*a, **kw):
-        if "user_id" not in session:
-            flash("Please log in first.", "error")
-            return redirect(url_for("login"))
-        return f(*a, **kw)
-    return wrap
+# ── FLASK EMULATORS FOR STARLETTE ─────────────────────────────────────────────
+def flash(request: Request, message: str, category: str = "message"):
+    if "_flashes" not in request.session:
+        request.session["_flashes"] = []
+    request.session["_flashes"].append((category, message))
 
-def admin_required(f):
-    @wraps(f)
-    def wrap(*a, **kw):
-        if not session.get("is_admin"):
-            flash("Admin access required.", "error")
-            return redirect(url_for("dashboard"))
-        return f(*a, **kw)
-    return wrap
+def get_flashed_messages(request: Request, with_categories=False):
+    flashes = request.session.pop("_flashes", [])
+    if with_categories:
+        return flashes
+    return [x[1] for x in flashes]
+
+def render(request: Request, name: str, **context):
+    context["request"] = request
+    context["session"] = request.session
+    context["get_flashed_messages"] = lambda with_categories=False: get_flashed_messages(request, with_categories)
+    return templates.TemplateResponse(name, context)
+
+class RequiresLoginException(Exception): pass
+class RequiresAdminException(Exception): pass
+
+@app.exception_handler(RequiresLoginException)
+async def requires_login_exception_handler(request: Request, exc: RequiresLoginException):
+    flash(request, "Please log in first.", "error")
+    return RedirectResponse(request.url_for("login"), status_code=303)
+
+@app.exception_handler(RequiresAdminException)
+async def requires_admin_exception_handler(request: Request, exc: RequiresAdminException):
+    flash(request, "Admin access required.", "error")
+    return RedirectResponse(request.url_for("dashboard"), status_code=303)
+
+def login_required(request: Request):
+    if "user_id" not in request.session:
+        raise RequiresLoginException()
+    return request.session
+
+def admin_required(request: Request):
+    if not request.session.get("is_admin"):
+        raise RequiresAdminException()
+    return request.session
 
 def gen_otp(length=6):
     return ''.join(random.choices(string.digits, k=length))
@@ -221,104 +253,95 @@ def generate_slots(date, doctor_id):
 
 # ── SIMPLE OFFLINE AI LOGIC ───────────────────────────────────────────────────
 def build_offline_ai_suggestion(symptoms: str) -> str:
-    """
-    Lightweight, rule-based assistant that generates a
-    structured markdown response based on the user's text.
-    This is NOT real medical advice.
-    """
     original = (symptoms or "").strip()
-
-    return f"""**AI Health Assistant (Offline Mode)**  
-
-You asked: `{original}`
-
-Please connect to the internet and provide an API key (OpenAI/Anthropic) in `.env` for the AI Assistant to provide you with full, conversational answers.
-
-**Important:** This assistant is for **general guidance only** and **does not replace a real doctor**.  
-If your symptoms feel severe, sudden, or worrying, please seek emergency care immediately."""
+    return f"""**AI Health Assistant (Offline Mode)**  \n\nYou asked: `{original}`\n\nPlease connect to the internet and provide an API key (OpenAI/Anthropic/Gemini) in `.env` for the AI Assistant to provide you with full, conversational answers.\n\n**Important:** This assistant is for **general guidance only** and **does not replace a real doctor**.  \nIf your symptoms feel severe, sudden, or worrying, please seek emergency care immediately."""
 
 # ── ROUTES ────────────────────────────────────────────────────────────────────
-@app.route("/")
-def index():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-    return render_template("index.html")
+@app.get("/")
+async def index(request: Request):
+    if "user_id" in request.session:
+        return RedirectResponse(request.url_for("dashboard"), status_code=303)
+    return render(request, "index.html")
 
 # ── REGISTER ──────────────────────────────────────────────────────────────────
-@app.route("/register", methods=["GET","POST"])
-def register():
-    if request.method == "POST":
-        name     = request.form["name"].strip()
-        age      = request.form.get("age","").strip()
-        phone    = request.form.get("phone","").strip()
-        email    = request.form["email"].strip().lower()
-        pw       = request.form["password"]
-        confirm  = request.form["confirm_password"]
+@app.get("/register")
+async def register(request: Request):
+    return render(request, "register.html")
 
-        if not all([name, email, pw]):
-            flash("Name, email and password are required.", "error")
-            return render_template("register.html")
-        if pw != confirm:
-            flash("Passwords do not match.", "error")
-            return render_template("register.html")
-        if len(pw) < 6:
-            flash("Password must be at least 6 characters.", "error")
-            return render_template("register.html")
+@app.post("/register")
+async def register_post(request: Request, name: str = Form(...), age: str = Form(""), phone: str = Form(""), email: str = Form(...), password: str = Form(...), confirm_password: str = Form(...)):
+    name = name.strip()
+    email = email.strip().lower()
+    
+    if not all([name, email, password]):
+        flash(request, "Name, email and password are required.", "error")
+        return render(request, "register.html")
+    if password != confirm_password:
+        flash(request, "Passwords do not match.", "error")
+        return render(request, "register.html")
+    if len(password) < 6:
+        flash(request, "Password must be at least 6 characters.", "error")
+        return render(request, "register.html")
 
-        otp = gen_otp()
-        expiry = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
-        hashed = generate_password_hash(pw)
-        try:
-            with get_db() as c:
-                c.execute(
-                    "INSERT INTO users (name,age,phone,email,password,otp,otp_expiry) VALUES(?,?,?,?,?,?,?)",
-                    (name, age or None, phone or None, email, hashed, otp, expiry)
-                )
-                c.commit()
-            sent = send_otp_email(email, name, otp)
-            session["pending_email"] = email
-            if sent:
-                flash("Account created! OTP sent to your email. Please check your inbox.", "success")
-            else:
-                flash("Account created! Email sending failed — check your SMTP settings in .env", "error")
-            return redirect(url_for("verify_otp"))
-        except sqlite3.IntegrityError:
-            flash("Email already registered.", "error")
-    return render_template("register.html")
+    otp = gen_otp()
+    expiry = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    hashed = generate_password_hash(password)
+    try:
+        with get_db() as c:
+            c.execute(
+                "INSERT INTO users (name,age,phone,email,password,otp,otp_expiry) VALUES(?,?,?,?,?,?,?)",
+                (name, age or None, phone or None, email, hashed, otp, expiry)
+            )
+            c.commit()
+        sent = send_otp_email(email, name, otp)
+        request.session["pending_email"] = email
+        if sent:
+            flash(request, "Account created! OTP sent to your email. Please check your inbox.", "success")
+        else:
+            flash(request, "Account created! Email sending failed — check your SMTP settings in .env", "error")
+        return RedirectResponse(request.url_for("verify_otp"), status_code=303)
+    except sqlite3.IntegrityError:
+        flash(request, "Email already registered.", "error")
+    return render(request, "register.html")
 
 # ── OTP VERIFY ────────────────────────────────────────────────────────────────
-@app.route("/verify", methods=["GET","POST"])
-def verify_otp():
-    email = session.get("pending_email")
+@app.get("/verify")
+async def verify_otp(request: Request):
+    email = request.session.get("pending_email")
     if not email:
-        return redirect(url_for("register"))
-    if request.method == "POST":
-        entered = request.form["otp"].strip()
-        with get_db() as c:
-            user = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
-        if not user:
-            flash("User not found.", "error")
-            return redirect(url_for("register"))
-        if user["otp"] != entered:
-            flash("Invalid OTP. Try again.", "error")
-            return render_template("verify_otp.html", email=email, demo_otp=session.get("pending_otp_demo"))
-        if datetime.now() > datetime.strptime(user["otp_expiry"], "%Y-%m-%d %H:%M:%S"):
-            flash("OTP expired. Please register again.", "error")
-            return redirect(url_for("register"))
-        with get_db() as c:
-            c.execute("UPDATE users SET is_verified=1, otp=NULL WHERE email=?", (email,))
-            c.commit()
-        session.pop("pending_email", None)
-        session.pop("pending_otp_demo", None)
-        flash("Email verified! You can now log in.", "success")
-        return redirect(url_for("login"))
-    return render_template("verify_otp.html", email=email, demo_otp=session.get("pending_otp_demo"))
+        return RedirectResponse(request.url_for("register"), status_code=303)
+    return render(request, "verify_otp.html", email=email, demo_otp=request.session.get("pending_otp_demo"))
 
-@app.route("/resend-otp")
-def resend_otp():
-    email = session.get("pending_email")
+@app.post("/verify")
+async def verify_otp_post(request: Request, otp: str = Form(...)):
+    email = request.session.get("pending_email")
     if not email:
-        return redirect(url_for("register"))
+        return RedirectResponse(request.url_for("register"), status_code=303)
+    entered = otp.strip()
+    with get_db() as c:
+        user = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    if not user:
+        flash(request, "User not found.", "error")
+        return RedirectResponse(request.url_for("register"), status_code=303)
+    if user["otp"] != entered:
+        flash(request, "Invalid OTP. Try again.", "error")
+        return render(request, "verify_otp.html", email=email, demo_otp=request.session.get("pending_otp_demo"))
+    if datetime.now() > datetime.strptime(user["otp_expiry"], "%Y-%m-%d %H:%M:%S"):
+        flash(request, "OTP expired. Please register again.", "error")
+        return RedirectResponse(request.url_for("register"), status_code=303)
+    with get_db() as c:
+        c.execute("UPDATE users SET is_verified=1, otp=NULL WHERE email=?", (email,))
+        c.commit()
+    request.session.pop("pending_email", None)
+    request.session.pop("pending_otp_demo", None)
+    flash(request, "Email verified! You can now log in.", "success")
+    return RedirectResponse(request.url_for("login"), status_code=303)
+
+@app.get("/resend-otp")
+async def resend_otp(request: Request):
+    email = request.session.get("pending_email")
+    if not email:
+        return RedirectResponse(request.url_for("register"), status_code=303)
     otp = gen_otp()
     expiry = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as c:
@@ -326,186 +349,155 @@ def resend_otp():
         c.execute("UPDATE users SET otp=?,otp_expiry=? WHERE email=?", (otp, expiry, email))
         c.commit()
     send_otp_email(email, user["name"] if user else "User", otp)
-    flash("New OTP sent! Please check your email.", "success")
-    return redirect(url_for("verify_otp"))
+    flash(request, "New OTP sent! Please check your email.", "success")
+    return RedirectResponse(request.url_for("verify_otp"), status_code=303)
 
 # ── LOGIN / LOGOUT ────────────────────────────────────────────────────────────
-@app.route("/login", methods=["GET","POST"])
-def login():
-    if request.method == "POST":
-        email = request.form["email"].strip().lower()
-        pw    = request.form["password"]
-        with get_db() as c:
-            user = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
-        if user and check_password_hash(user["password"], pw):
-            if not user["is_verified"]:
-                session["pending_email"] = email
-                flash("Please verify your email first.", "error")
-                return redirect(url_for("verify_otp"))
-            session["user_id"]   = user["id"]
-            session["user_name"] = user["name"]
-            session["is_admin"]  = bool(user["is_admin"])
-            flash(f"Welcome back, {user['name']}! 👋", "success")
-            return redirect(url_for("admin_dashboard") if user["is_admin"] else url_for("dashboard"))
-        flash("Invalid email or password.", "error")
-    return render_template("login.html")
+@app.get("/login")
+async def login(request: Request):
+    return render(request, "login.html")
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("Logged out successfully.", "success")
-    return redirect(url_for("index"))
+@app.post("/login")
+async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
+    email = email.strip().lower()
+    with get_db() as c:
+        user = c.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    if user and check_password_hash(user["password"], password):
+        if not user["is_verified"]:
+            request.session["pending_email"] = email
+            flash(request, "Please verify your email first.", "error")
+            return RedirectResponse(request.url_for("verify_otp"), status_code=303)
+        request.session["user_id"]   = user["id"]
+        request.session["user_name"] = user["name"]
+        request.session["is_admin"]  = bool(user["is_admin"])
+        flash(request, f"Welcome back, {user['name']}! 👋", "success")
+        return RedirectResponse(request.url_for("admin_dashboard") if user["is_admin"] else request.url_for("dashboard"), status_code=303)
+    flash(request, "Invalid email or password.", "error")
+    return render(request, "login.html")
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    flash(request, "Logged out successfully.", "success")
+    return RedirectResponse(request.url_for("index"), status_code=303)
 
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
-@app.route("/dashboard")
-@login_required
-def dashboard():
+@app.get("/dashboard")
+async def dashboard(request: Request, _=Depends(login_required)):
     with get_db() as c:
         upcoming = c.execute(
             "SELECT * FROM appointments WHERE user_id=? AND date>=date('now') AND status!='cancelled' ORDER BY date,start_time",
-            (session["user_id"],)
+            (request.session["user_id"],)
         ).fetchall()
         past = c.execute(
             "SELECT * FROM appointments WHERE user_id=? AND (date<date('now') OR status='cancelled') ORDER BY date DESC",
-            (session["user_id"],)
+            (request.session["user_id"],)
         ).fetchall()
-        user = c.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
-    return render_template("dashboard.html", upcoming=upcoming, past=past, user=user, doctors=DOCTORS)
+        user = c.execute("SELECT * FROM users WHERE id=?", (request.session["user_id"],)).fetchone()
+    return render(request, "dashboard.html", upcoming=upcoming, past=past, user=user, doctors=DOCTORS)
 
 # ── BOOK ──────────────────────────────────────────────────────────────────────
-@app.route("/book", methods=["GET","POST"])
-@login_required
-def book():
-    selected_date   = request.args.get("date", datetime.today().strftime("%Y-%m-%d"))
-    selected_doctor = int(request.args.get("doctor", 1))
-    slots = generate_slots(selected_date, selected_doctor)
+@app.get("/book")
+async def book(request: Request, date: str = None, doctor: int = 1, _=Depends(login_required)):
+    if not date:
+        date = datetime.today().strftime("%Y-%m-%d")
+    slots = generate_slots(date, doctor)
+    return render(request, "book.html", slots=slots, selected_date=date,
+                   doctors=DOCTORS, categories=CATEGORIES, selected_doctor=doctor)
 
-    if request.method == "POST":
-        title       = request.form["title"].strip()
-        category    = request.form.get("category","General Checkup")
-        date        = request.form["date"]
-        start_time  = request.form["start_time"]
-        end_time    = request.form["end_time"]
-        doctor_id   = int(request.form.get("doctor_id", 1))
-        location    = request.form.get("location","Apollo Hospital, Hyderabad").strip()
-        notes       = request.form.get("notes","").strip()
+@app.post("/book")
+async def book_post(request: Request, title: str = Form(...), category: str = Form("General Checkup"), 
+                    date: str = Form(...), start_time: str = Form(...), end_time: str = Form(...), 
+                    doctor_id: int = Form(1), location: str = Form("Apollo Hospital, Hyderabad"), 
+                    notes: str = Form(""), _=Depends(login_required)):
+    title = title.strip()
+    location = location.strip()
+    notes = notes.strip()
+    slots = generate_slots(date, doctor_id)
+    if not all([title, date, start_time, end_time]):
+        flash(request, "Please fill all required fields.", "error")
+        return render(request, "book.html", slots=slots, selected_date=date,
+                               doctors=DOCTORS, categories=CATEGORIES, selected_doctor=doctor_id)
 
-        if not all([title, date, start_time, end_time]):
-            flash("Please fill all required fields.", "error")
-            return render_template("book.html", slots=slots, selected_date=selected_date,
-                                   doctors=DOCTORS, categories=CATEGORIES, selected_doctor=selected_doctor)
+    if is_overlapping(date, start_time, end_time, doctor_id):
+        flash(request, "That slot is already booked. Please choose another time.", "error")
+        return render(request, "book.html", slots=slots, selected_date=date,
+                               doctors=DOCTORS, categories=CATEGORIES, selected_doctor=doctor_id)
 
-        if is_overlapping(date, start_time, end_time, doctor_id):
-            flash("That slot is already booked. Please choose another time.", "error")
-            return render_template("book.html", slots=slots, selected_date=selected_date,
-                                   doctors=DOCTORS, categories=CATEGORIES, selected_doctor=selected_doctor)
+    with get_db() as c:
+        c.execute(
+            "INSERT INTO appointments (user_id,doctor_id,title,category,date,start_time,end_time,location,notes) VALUES(?,?,?,?,?,?,?,?,?)",
+            (request.session["user_id"], doctor_id, title, category, date, start_time, end_time, location, notes)
+        )
+        c.commit()
+        user = c.execute("SELECT * FROM users WHERE id=?", (request.session["user_id"],)).fetchone()
+        appt = c.execute("SELECT * FROM appointments WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                         (request.session["user_id"],)).fetchone()
 
-        with get_db() as c:
-            c.execute(
-                "INSERT INTO appointments (user_id,doctor_id,title,category,date,start_time,end_time,location,notes) VALUES(?,?,?,?,?,?,?,?,?)",
-                (session["user_id"], doctor_id, title, category, date, start_time, end_time, location, notes)
-            )
-            c.commit()
-            user = c.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
-            appt = c.execute("SELECT * FROM appointments WHERE user_id=? ORDER BY id DESC LIMIT 1",
-                             (session["user_id"],)).fetchone()
-
-        send_booking_confirmation(user["email"], user["name"], dict(appt))
-        flash("Appointment booked! Confirmation sent to your email. 🎉", "success")
-        return redirect(url_for("dashboard"))
-
-    return render_template("book.html", slots=slots, selected_date=selected_date,
-                           doctors=DOCTORS, categories=CATEGORIES, selected_doctor=selected_doctor)
+    send_booking_confirmation(user["email"], user["name"], dict(appt))
+    flash(request, "Appointment booked! Confirmation sent to your email. 🎉", "success")
+    return RedirectResponse(request.url_for("dashboard"), status_code=303)
 
 # ── SLOTS API ─────────────────────────────────────────────────────────────────
-@app.route("/api/slots")
-@login_required
-def api_slots():
-    date      = request.args.get("date", datetime.today().strftime("%Y-%m-%d"))
-    doctor_id = int(request.args.get("doctor", 1))
-    return jsonify(slots=generate_slots(date, doctor_id))
+@app.get("/api/slots")
+async def api_slots(request: Request, date: str = None, doctor: int = 1, _=Depends(login_required)):
+    if not date:
+        date = datetime.today().strftime("%Y-%m-%d")
+    return {"slots": generate_slots(date, doctor)}
 
 # ── AI SUGGESTION API ─────────────────────────────────────────────────────────
-@app.route("/api/ai-suggest", methods=["POST"])
-def ai_suggest():
-    import urllib.request, urllib.error
-    data     = request.get_json()
+@app.post("/api/ai-suggest")
+async def ai_suggest(request: Request):
+    data = await request.json()
     symptoms = data.get("symptoms","").strip()
     if not symptoms:
-        return jsonify(error="No symptoms provided"), 400
-    # Always prepare an offline rule-based answer as fallback.
+        return JSONResponse({"error": "No symptoms provided"}, status_code=400)
+    
     offline = build_offline_ai_suggestion(symptoms)
 
     current_gemini_key = os.environ.get("GEMINI_API_KEY", "")
     current_anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     current_openai_key = os.environ.get("OPENAI_API_KEY", "")
     
-    # If no keys are configured, stay fully offline.
     if not current_gemini_key and not current_anthropic_key and not current_openai_key:
-        print("DEBUG: No API keys configured.")
-        return jsonify(suggestion=offline, source="offline")
+        return {"suggestion": offline, "source": "offline"}
 
-    # Try Google Gemini API first (Free Tier)
     if current_gemini_key:
         try:
             payload = json.dumps({
-                "system_instruction": {
-                    "parts": [{"text": "You are a helpful medical conversational AI assistant for MediBook. You can answer any health, medical, or appointment related questions from the user. Always remind users that you are NOT a substitute for a real doctor if they ask for diagnoses."}]
-                },
-                "contents": [
-                    {
-                        "parts": [{"text": symptoms}]
-                    }
-                ]
+                "system_instruction": {"parts": [{"text": "You are a helpful medical conversational AI assistant for MediBook. You can answer any health, medical, or appointment related questions from the user. Always remind users that you are NOT a substitute for a real doctor if they ask for diagnoses."}]},
+                "contents": [{"parts": [{"text": symptoms}]}]
             }).encode()
 
             req = urllib.request.Request(
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={current_gemini_key}",
                 data=payload,
-                headers={
-                    "Content-Type": "application/json"
-                }
+                headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=15) as r:
                 result = json.loads(r.read())
             
             message = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text") or offline
-            return jsonify(suggestion=message, source="gemini")
-            
+            return {"suggestion": message, "source": "gemini"}
         except urllib.error.HTTPError as e:
             try:
                 body = e.read().decode("utf-8", errors="replace")
             except Exception:
                 body = ""
-            msg = e.reason if hasattr(e, 'reason') else "Unknown HTTP Error"
-            print(f"DEBUG GEMINI HTTP ERROR: {e.code} - {msg} - body: {body}")
-            
+            msg = getattr(e, 'reason', "Unknown Error")
             if not current_anthropic_key and not current_openai_key:
-                return jsonify(
-                    suggestion=f"**Gemini AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}",
-                    source="offline_http_error",
-                    warning=msg
-                )
+                return {"suggestion": f"**Gemini AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}", "source": "offline_http_error", "warning": msg}
         except Exception as ex:
-            print(f"DEBUG GEMINI EXCEPTION: {ex}")
             if not current_anthropic_key and not current_openai_key:
-                 return jsonify(
-                    suggestion=f"**Gemini AI Exception**\n\n{ex}",
-                    source="offline_exception",
-                    warning="Cloud AI could not be reached. Using offline assistant instead."
-                )
+                return {"suggestion": f"**Gemini AI Exception**\n\n{ex}", "source": "offline_exception"}
 
-    # Try Anthropic Claude API first
     if current_anthropic_key:
         try:
             payload = json.dumps({
                 "model": "claude-3-haiku-20240307",
                 "max_tokens": 400,
                 "system": "You are a helpful medical conversational AI assistant for MediBook. You can answer any health, medical, or appointment related questions from the user. Always remind users that you are NOT a substitute for a real doctor if they ask for diagnoses.",
-                "messages": [{
-                    "role": "user",
-                    "content": symptoms
-                }]
+                "messages": [{"role": "user", "content": symptoms}]
             }).encode()
 
             req = urllib.request.Request(
@@ -521,49 +513,25 @@ def ai_suggest():
                 result = json.loads(r.read())
             
             message = result.get("content", [{}])[0].get("text") or offline
-            return jsonify(suggestion=message, source="anthropic")
-            
+            return {"suggestion": message, "source": "anthropic"}
         except urllib.error.HTTPError as e:
             try:
                 body = e.read().decode("utf-8", errors="replace")
             except Exception:
                 body = ""
-            msg = e.reason if hasattr(e, 'reason') else "Unknown HTTP Error"
-            print(f"DEBUG ANTHROPIC HTTP ERROR: {e.code} - {msg} - body: {body}")
-            
-            # Fall back to checking OpenAI if Anthropic is also rate limited
+            msg = getattr(e, 'reason', "Unknown Error")
             if not current_openai_key:
-                return jsonify(
-                    suggestion=f"**Anthropic AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}",
-                    source="offline_http_error",
-                    warning=msg
-                )
+                return {"suggestion": f"**Anthropic AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}", "source": "offline_http_error", "warning": msg}
         except Exception as ex:
-            print(f"DEBUG ANTHROPIC EXCEPTION: {ex}")
             if not current_openai_key:
-                 return jsonify(
-                    suggestion=f"**Anthropic AI Exception**\n\n{ex}",
-                    source="offline_exception",
-                    warning="Cloud AI could not be reached. Using offline assistant instead."
-                )
+                return {"suggestion": f"**Anthropic AI Exception**\n\n{ex}", "source": "offline_exception"}
 
-    # Backup: OpenAI Chat Completions API if Anthropic fails or isn't set.
     try:
         payload = json.dumps({
             "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful medical conversational AI assistant for MediBook. "
-                        "You can answer any health, medical, or appointment related questions from the user. "
-                        "Always remind users that you are NOT a substitute for a real doctor if they ask for diagnoses."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": symptoms,
-                },
+                {"role": "system", "content": "You are a helpful medical conversational AI assistant for MediBook. You can answer any health, medical, or appointment related questions from the user. Always remind users that you are NOT a substitute for a real doctor if they ask for diagnoses."},
+                {"role": "user", "content": symptoms},
             ],
             "max_tokens": 400,
             "temperature": 0.7,
@@ -572,54 +540,33 @@ def ai_suggest():
         req = urllib.request.Request(
             "https://api.openai.com/v1/chat/completions",
             data=payload,
-            headers={
-                "Authorization": f"Bearer {current_openai_key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {current_openai_key}", "Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=15) as r:
             raw = r.read().decode("utf-8")
         result = json.loads(raw)
-
         choice = (result.get("choices") or [{}])[0]
         message = (choice.get("message") or {}).get("content") or offline
-        return jsonify(suggestion=message, source="openai")
-
+        return {"suggestion": message, "source": "openai"}
     except urllib.error.HTTPError as e:
-        # For HTTP errors (e.g. 401, 429) show a friendly message and fall back.
         try:
             body = e.read().decode("utf-8", errors="replace")
         except Exception:
             body = ""
-        msg = e.reason if hasattr(e, 'reason') else "Unknown HTTP Error"
-        print(f"DEBUG HTTP ERROR: {e.code} - {msg} - body: {body}")
-        
-        # Override offline message with the actual error so user sees it in debugging
-        return jsonify(
-            suggestion=f"**Cloud AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}",
-            source="offline_http_error",
-            warning=msg
-        )
+        msg = getattr(e, 'reason', "Unknown Error")
+        return {"suggestion": f"**Cloud AI Error**\n\nCode: {e.code}\nMessage: {msg}\nDetail: {body}", "source": "offline_http_error", "warning": msg}
     except Exception as ex:
-        # For any unexpected error, do NOT expose raw error details to the end user.
-        print(f"DEBUG EXCEPTION: {ex}")
-        return jsonify(
-            suggestion=f"**Cloud AI Exception**\n\n{ex}",
-            source="offline_exception",
-            warning="Cloud AI could not be reached. Using offline assistant instead."
-        )
+        return {"suggestion": f"**Cloud AI Exception**\n\n{ex}", "source": "offline_exception"}
 
 # ── CANCEL ────────────────────────────────────────────────────────────────────
-@app.route("/cancel/<int:appt_id>", methods=["POST"])
-@login_required
-def cancel(appt_id):
+@app.post("/cancel/{appt_id}")
+async def cancel(request: Request, appt_id: int, _=Depends(login_required)):
     with get_db() as c:
         c.execute("UPDATE appointments SET status='cancelled' WHERE id=? AND user_id=?",
-                  (appt_id, session["user_id"]))
+                  (appt_id, request.session["user_id"]))
         c.commit()
-    flash("Appointment cancelled.", "success")
+    flash(request, "Appointment cancelled.", "success")
 
-    # Notify waitlist
     with get_db() as c:
         appt = c.execute("SELECT * FROM appointments WHERE id=?", (appt_id,)).fetchone()
         if appt:
@@ -629,54 +576,48 @@ def cancel(appt_id):
             ).fetchone()
             if wl:
                 send_email(wl["email"], "MediBook – Slot Available!",
-                    f"<p>Hi {wl['name']}, a slot opened up on {appt['date']} at {appt['start_time']}. <a href='http://localhost:5000/book'>Book now!</a></p>")
+                    f"<p>Hi {wl['name']}, a slot opened up on {appt['date']} at {appt['start_time']}.</p>")
                 c.execute("DELETE FROM waitlist WHERE id=?", (wl["id"],))
                 c.commit()
-    return redirect(url_for("dashboard"))
+    return RedirectResponse(request.url_for("dashboard"), status_code=303)
 
 # ── PROFILE ───────────────────────────────────────────────────────────────────
-@app.route("/profile", methods=["GET","POST"])
-@login_required
-def profile():
+@app.get("/profile")
+async def profile(request: Request, _=Depends(login_required)):
     with get_db() as c:
-        user = c.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
-    if request.method == "POST":
-        name  = request.form["name"].strip()
-        age   = request.form.get("age","").strip()
-        phone = request.form.get("phone","").strip()
-        with get_db() as c:
-            c.execute("UPDATE users SET name=?,age=?,phone=? WHERE id=?",
-                      (name, age or None, phone or None, session["user_id"]))
-            c.commit()
-        session["user_name"] = name
-        flash("Profile updated!", "success")
-        return redirect(url_for("profile"))
-    return render_template("profile.html", user=user)
+        user = c.execute("SELECT * FROM users WHERE id=?", (request.session["user_id"],)).fetchone()
+    return render(request, "profile.html", user=user)
+
+@app.post("/profile")
+async def profile_post(request: Request, name: str = Form(...), age: str = Form(""), phone: str = Form(""), _=Depends(login_required)):
+    name = name.strip()
+    with get_db() as c:
+        c.execute("UPDATE users SET name=?,age=?,phone=? WHERE id=?",
+                  (name, age or None, phone or None, request.session["user_id"]))
+        c.commit()
+    request.session["user_name"] = name
+    flash(request, "Profile updated!", "success")
+    return RedirectResponse(request.url_for("profile"), status_code=303)
 
 # ── WAITLIST ──────────────────────────────────────────────────────────────────
-@app.route("/waitlist", methods=["POST"])
-@login_required
-def join_waitlist():
-    doctor_id  = int(request.form["doctor_id"])
-    date       = request.form["date"]
-    start_time = request.form["start_time"]
+@app.post("/waitlist")
+async def join_waitlist(request: Request, doctor_id: int = Form(...), date: str = Form(...), start_time: str = Form(...), _=Depends(login_required)):
     with get_db() as c:
         existing = c.execute(
             "SELECT id FROM waitlist WHERE user_id=? AND doctor_id=? AND date=? AND start_time=?",
-            (session["user_id"], doctor_id, date, start_time)
+            (request.session["user_id"], doctor_id, date, start_time)
         ).fetchone()
         if not existing:
             c.execute("INSERT INTO waitlist(user_id,doctor_id,date,start_time) VALUES(?,?,?,?)",
-                      (session["user_id"], doctor_id, date, start_time))
+                      (request.session["user_id"], doctor_id, date, start_time))
             c.commit()
-    flash("Added to waitlist! We'll notify you if this slot opens up.", "success")
-    return redirect(url_for("book", date=date, doctor=doctor_id))
+    flash(request, "Added to waitlist! We'll notify you if this slot opens up.", "success")
+    # Redirect with query params is easiest this way:
+    return RedirectResponse(f"/book?date={date}&doctor={doctor_id}", status_code=303)
 
 # ── ADMIN ─────────────────────────────────────────────────────────────────────
-@app.route("/admin")
-@login_required
-@admin_required
-def admin_dashboard():
+@app.get("/admin")
+async def admin_dashboard(request: Request, _=Depends(login_required), __=Depends(admin_required)):
     with get_db() as c:
         users = c.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
         appts = c.execute(
@@ -688,23 +629,18 @@ def admin_dashboard():
             "upcoming_appts":    c.execute("SELECT COUNT(*) FROM appointments WHERE date>=date('now') AND status!='cancelled'").fetchone()[0],
             "cancelled_appts":   c.execute("SELECT COUNT(*) FROM appointments WHERE status='cancelled'").fetchone()[0],
         }
-    return render_template("admin.html", users=users, appts=appts, stats=stats, doctors=DOCTORS)
+    return render(request, "admin.html", users=users, appts=appts, stats=stats, doctors=DOCTORS)
 
-@app.route("/admin/delete-appt/<int:appt_id>", methods=["POST"])
-@login_required
-@admin_required
-def admin_delete_appt(appt_id):
+@app.post("/admin/delete-appt/{appt_id}")
+async def admin_delete_appt(request: Request, appt_id: int, _=Depends(login_required), __=Depends(admin_required)):
     with get_db() as c:
         c.execute("DELETE FROM appointments WHERE id=?", (appt_id,))
         c.commit()
-    flash("Appointment deleted.", "success")
-    return redirect(url_for("admin_dashboard"))
+    flash(request, "Appointment deleted.", "success")
+    return RedirectResponse(request.url_for("admin_dashboard"), status_code=303)
 
-# ── REMINDER CHECK (call via cron or manually) ────────────────────────────────
-@app.route("/admin/send-reminders")
-@login_required
-@admin_required
-def send_reminders():
+@app.get("/admin/send-reminders")
+async def send_reminders(request: Request, _=Depends(login_required), __=Depends(admin_required)):
     now = datetime.now()
     reminder_window_start = (now + timedelta(hours=1)).strftime("%H:%M")
     reminder_window_end   = (now + timedelta(hours=1, minutes=30)).strftime("%H:%M")
@@ -721,9 +657,10 @@ def send_reminders():
             c.execute("UPDATE appointments SET reminder_sent=1 WHERE id=?", (a["id"],))
             count += 1
         c.commit()
-    flash(f"Sent {count} reminders.", "success")
-    return redirect(url_for("admin_dashboard"))
+    flash(request, f"Sent {count} reminders.", "success")
+    return RedirectResponse(request.url_for("admin_dashboard"), status_code=303)
 
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True, port=5000)
+    import uvicorn
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)

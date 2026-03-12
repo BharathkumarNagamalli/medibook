@@ -1,2 +1,7 @@
-flask>=3.0.0
-werkzeug>=3.0.0
+fastapi
+uvicorn
+jinja2
+python-multipart
+passlib[bcrypt]
+itsdangerous
+werkzeug
