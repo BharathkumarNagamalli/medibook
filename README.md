@@ -1,7 +1,7 @@
 # 🏥 MediBook – AI-Powered Appointment Scheduler
 
-A full-stack Flask web application for medical appointment scheduling.  
-Upgraded from a Python CLI project to a complete web app with AI, maps, OTP, and more.
+A full-stack **FastAPI** web application for medical appointment scheduling.  
+Upgraded from a Python CLI project to a complete asynchronous web app with AI, maps, OTP, and more.
 
 ---
 
@@ -31,7 +31,7 @@ This project demonstrates a fully functional, modern web application stack, inte
 
 ### Backend & Core Logic
 - **Python 3**: Core programming language.
-- **Flask 3**: Lightweight WSGI web application framework.
+- **FastAPI & Uvicorn**: Blazing-fast asynchronous web application framework.
 - **Werkzeug**: Used for secure password hashing and session management.
 - **SQLite3**: Relational database for storing users and appointments.
 
@@ -45,7 +45,7 @@ This project demonstrates a fully functional, modern web application stack, inte
 ### Frontend
 - **HTML5 & CSS3**: Custom modern styling with responsive design.
 - **JavaScript (ES6)**: Dynamic slot filtering and AJAX requests for the AI.
-- **Jinja2**: HTML templating engine for Flask.
+- **Jinja2**: HTML templating engine adapted for Starlette/FastAPI.
 - **Google Fonts**: Custom typography using Syne and Instrument Sans.
 
 ---
@@ -60,7 +60,7 @@ cd MediBook
 
 ### 2. Install dependencies
 ```bash
-pip install flask werkzeug
+pip install -r requirements.txt
 ```
 
 ### 3. Configure environment
@@ -83,7 +83,9 @@ GEMINI_API_KEY=your_gemini_key
 ```bash
 python app.py
 ```
-Open http://127.0.0.1:5000 in your browser.
+*(Alternatively: `uvicorn app:app --reload`)*
+
+Open http://127.0.0.1:8000 in your browser.
 
 ---
 
