@@ -25,32 +25,37 @@ Upgraded from a Python CLI project to a complete web app with AI, maps, OTP, and
 
 ---
 
-## 🛠️ Technologies
+## 🛠️ Technologies & Skills Used
 
-### Previous (CLI)
-- Python, SQLite, `dataclasses`, `datetime`, CLI menu
+This project demonstrates a fully functional, modern web application stack, integrating front-end design, back-end logic, database management, and third-party APIs.
 
-### New (Web App)
-| Layer | Technology |
-|---|---|
-| Backend | **Flask 3**, Python stdlib |
-| Auth | **Werkzeug** (bcrypt hashing), session |
-| Database | **SQLite** (sqlite3) |
-| Email | **smtplib** (Gmail SMTP) |
-| AI | **Anthropic Claude API** (claude-sonnet) |
-| Maps | **Google Maps Embed API** |
-| Frontend | **HTML5, CSS3, JavaScript (ES6)** |
-| Templating | **Jinja2** |
-| Fonts | Google Fonts (Syne + Instrument Sans) |
+### Backend & Core Logic
+- **Python 3**: Core programming language.
+- **Flask 3**: Lightweight WSGI web application framework.
+- **Werkzeug**: Used for secure password hashing and session management.
+- **SQLite3**: Relational database for storing users and appointments.
+
+### APIs & Integrations
+- **Google Gemini API**: Native integration for the AI Health Assistant.
+- **Anthropic Claude API**: Supported alternative for AI responses.
+- **OpenAI API**: Supported fallback for AI responses.
+- **Google Maps Embed API**: Dynamic maps for clinic locations.
+- **SMTP (smtplib)**: Real email integration for sending OTPs and booking confirmations.
+
+### Frontend
+- **HTML5 & CSS3**: Custom modern styling with responsive design.
+- **JavaScript (ES6)**: Dynamic slot filtering and AJAX requests for the AI.
+- **Jinja2**: HTML templating engine for Flask.
+- **Google Fonts**: Custom typography using Syne and Instrument Sans.
 
 ---
 
 ## 🚀 Setup & Run
 
-### 1. Clone
+### 1. Clone the repository
 ```bash
-git clone https://github.com/BharathkumarNagamalli/Appointment_Scheduler.git
-cd Appointment_Scheduler
+git clone https://github.com/YourUsername/MediBook.git
+cd MediBook
 ```
 
 ### 2. Install dependencies
@@ -58,65 +63,54 @@ cd Appointment_Scheduler
 pip install flask werkzeug
 ```
 
-### 3. Configure environment (optional but recommended)
-```bash
-cp .env.example .env
-# Edit .env with your Gmail credentials and Anthropic API key
+### 3. Configure environment
+Create a `.env` file in the root directory and add your credentials:
+```
+SECRET_KEY=your_secret_key
+ADMIN_EMAIL=admin@medibook.com
+
+# For real emails
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+
+# For AI Assistant
+GEMINI_API_KEY=your_gemini_key
 ```
 
-### 4. Run
+### 4. Run the application
 ```bash
 python app.py
 ```
-
-Open http://localhost:5000
+Open http://127.0.0.1:5000 in your browser.
 
 ---
 
 ## 🔑 Demo Credentials
 
-- **Admin:** admin@medibook.com / admin123
-- **OTP:** Shown on screen in demo mode (no email config needed)
-
----
-
-## 📧 Enable Real Emails
-
-1. Go to your Google Account → Security → App Passwords
-2. Generate an app password for "Mail"
-3. Set in `.env`:
-```
-SMTP_USER=your@gmail.com
-SMTP_PASS=your_app_password
-```
-
-## 🤖 Enable AI Assistant
-
-1. Get API key from https://console.anthropic.com
-2. Set in `.env`:
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
+- **Admin Account:** `admin@medibook.com` / `admin123`
+- **OTP Verification:** Look at the server console or configure real SMTP.
 
 ---
 
 ## 📁 Project Structure
 
 ```
-appointment_app/
-├── app.py              # All routes, logic, email, AI
-├── requirements.txt
-├── .env.example
-└── templates/
-    ├── base.html       # Nav, flash messages, shared CSS
-    ├── index.html      # Landing page + tech stack
-    ├── register.html   # Registration form
-    ├── verify_otp.html # 6-digit OTP input
-    ├── login.html      # Login
-    ├── dashboard.html  # User appointment overview
-    ├── book.html       # Slot picker + AI + Maps
-    ├── profile.html    # Edit profile
-    └── admin.html      # Admin control center
+MediBook/
+├── app.py              # Application routing, database logic, AI integration
+├── .gitignore          # Protected files (e.g., .env, databases, caches)
+├── templates/          # HTML templates
+│   ├── base.html       # Base layout
+│   ├── index.html      # Landing page
+│   ├── register.html   # Registration and OTP verification
+│   ├── login.html      # Authentication
+│   ├── dashboard.html  # User dashboard
+│   ├── book.html       # Appointment booking and AI assistant
+│   ├── profile.html    # User profile management
+│   └── admin.html      # Admin dashboard
+└── static/             # CSS and Images
+    └── uploads/        # User-uploaded avatars
 ```
 
 ---
