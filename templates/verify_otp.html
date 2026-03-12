@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Verify OTP – MediBook{% endblock %}
+{% block head %}
+<style>
+.auth-wrap{min-height:calc(100vh - 62px);display:flex;align-items:center;justify-content:center;padding:3rem 1.5rem;}
+.auth-box{width:100%;max-width:440px;}
+.otp-icon{width:64px;height:64px;background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.2);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin-bottom:1.5rem;}
+.otp-inputs{display:flex;gap:.6rem;justify-content:center;margin:1.5rem 0;}
+.otp-inputs input{
+  width:52px;height:60px;text-align:center;font-size:1.6rem;font-weight:800;
+  background:var(--surf2);border:1px solid var(--border);border-radius:10px;
+  color:var(--text);outline:none;transition:all .18s;font-family:'Syne',sans-serif;
+}
+.otp-inputs input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,200,240,.1);}
+.demo-box{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:.6rem;}
+.demo-box span{font-size:.84rem;color:var(--amber);}
+.demo-otp{font-size:1.2rem;font-weight:800;font-family:'Syne',sans-serif;letter-spacing:.2em;color:var(--green);}
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="otp-icon">✉️</div>
+    <h1 style="font-size:1.9rem;letter-spacing:-.5px;margin-bottom:.4rem;">Verify your email</h1>
+    <p style="color:var(--muted);font-size:.92rem;margin-bottom:1.5rem;">
+      We sent a 6-digit OTP to <strong style="color:var(--text);">{{ email }}</strong>
+    </p>
+
+    <div class="card">
+      <form method="POST" id="otpForm">
+        <div class="otp-inputs">
+          <input type="text" maxlength="1" class="otp-digit" autofocus>
+          <input type="text" maxlength="1" class="otp-digit">
+          <input type="text" maxlength="1" class="otp-digit">
+          <input type="text" maxlength="1" class="otp-digit">
+          <input type="text" maxlength="1" class="otp-digit">
+          <input type="text" maxlength="1" class="otp-digit">
+        </div>
+        <input type="hidden" name="otp" id="otpHidden">
+        <button type="submit" class="btn btn-green btn-wide">Verify & Continue →</button>
+      </form>
+      <div style="text-align:center;margin-top:1.2rem;font-size:.84rem;color:var(--muted);">
+        Didn't receive it? <a href="{{ url_for('resend_otp') }}" style="color:var(--accent);font-weight:600;">Resend OTP</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const digits = document.querySelectorAll('.otp-digit');
+digits.forEach((d, i) => {
+  d.addEventListener('input', e => {
+    d.value = d.value.replace(/\D/g,'');
+    if(d.value && i < digits.length-1) digits[i+1].focus();
+    document.getElementById('otpHidden').value = [...digits].map(x=>x.value).join('');
+  });
+  d.addEventListener('keydown', e => {
+    if(e.key==='Backspace' && !d.value && i>0) digits[i-1].focus();
+  });
+  d.addEventListener('paste', e => {
+    const text = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+    [...text].forEach((ch,j)=>{ if(digits[j]) digits[j].value=ch; });
+    document.getElementById('otpHidden').value = text;
+    if(digits[text.length-1]) digits[text.length-1].focus();
+    e.preventDefault();
+  });
+});
+document.getElementById('otpForm').addEventListener('submit', e => {
+  document.getElementById('otpHidden').value = [...digits].map(x=>x.value).join('');
+});
+</script>
+{% endblock %}

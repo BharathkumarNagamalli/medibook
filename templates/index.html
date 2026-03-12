@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}MediBook – Smart Appointment Scheduling{% endblock %}
+{% block head %}
+<style>
+.hero{min-height:calc(100vh - 62px);display:flex;align-items:center;justify-content:center;text-align:center;padding:4rem 1.5rem;position:relative;overflow:hidden;}
+.hero-glow{position:absolute;width:700px;height:700px;background:radial-gradient(circle,rgba(0,200,240,.07),transparent 65%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;}
+.hero-tag{display:inline-flex;align-items:center;gap:.4rem;background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.2);color:var(--green);padding:.3rem .9rem;border-radius:20px;font-size:.78rem;font-weight:700;letter-spacing:.06em;margin-bottom:1.8rem;}
+.hero h1{font-size:clamp(2.8rem,7vw,5.5rem);line-height:1.05;letter-spacing:-2px;margin-bottom:1.4rem;}
+.hero h1 .grad{background:linear-gradient(130deg,var(--accent),#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero p{font-size:1.1rem;color:var(--muted);max-width:480px;margin:0 auto 2.5rem;line-height:1.75;}
+.hero-btns{display:flex;gap:.9rem;justify-content:center;flex-wrap:wrap;}
+.features{padding:5rem 0;border-top:1px solid var(--border);}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem;margin-top:2.5rem;}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.6rem;transition:border-color .2s,transform .2s;}
+.feat:hover{border-color:var(--accent);transform:translateY(-3px);}
+.feat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:.9rem;}
+.feat h3{font-size:.95rem;margin-bottom:.4rem;}
+.feat p{font-size:.84rem;color:var(--muted);line-height:1.6;}
+.tech-section{padding:4rem 0;border-top:1px solid var(--border);}
+.tech-grid{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.5rem;}
+.tech-pill{background:var(--surf2);border:1px solid var(--border);padding:.35rem .9rem;border-radius:20px;font-size:.8rem;color:var(--muted);font-weight:500;}
+.tech-pill.new{border-color:rgba(0,200,240,.3);color:var(--accent);background:rgba(0,200,240,.07);}
+</style>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div>
+    <div class="hero-tag">✦ AI-Powered Scheduling</div>
+    <h1>Book smarter.<br><span class="grad">Heal faster.</span></h1>
+    <p>MediBook shows only available slots, prevents double-booking, sends reminders, and uses AI to guide your care.</p>
+    <div class="hero-btns">
+      <a href="{{ url_for('register') }}" class="btn btn-primary" style="padding:.8rem 2rem;font-size:1rem;">Get Started →</a>
+      <a href="{{ url_for('login') }}" class="btn btn-ghost" style="padding:.8rem 2rem;font-size:1rem;">Sign In</a>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="container">
+    <div class="section-label">What's Included</div>
+    <h2 style="font-size:2rem;letter-spacing:-.5px;">Everything for seamless care</h2>
+    <div class="features-grid">
+      <div class="feat"><div class="feat-icon" style="background:rgba(0,200,240,.1);">🗓️</div><h3>Live Slot Availability</h3><p>Only open slots are shown. Booked ones disappear in real time — no confusion.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(0,229,160,.1);">🔒</div><h3>OTP Verification</h3><p>Email OTP confirms every new account. Passwords are hashed securely.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(124,58,237,.1);">🤖</div><h3>AI Health Assistant</h3><p>Describe symptoms and Claude AI suggests which specialist to book and how urgently.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(251,191,36,.1);">🔔</div><h3>Email Reminders</h3><p>Get a confirmation immediately after booking and a reminder 1 hour before.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(244,63,94,.1);">📍</div><h3>Map Location</h3><p>Every appointment shows an interactive Google Maps embed of the clinic.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(0,200,240,.07);">⏳</div><h3>Smart Waitlist</h3><p>If a slot is full, join the waitlist and get notified automatically when it opens.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(0,229,160,.07);">👨‍⚕️</div><h3>Doctor Selection</h3><p>Choose from multiple specialists. Each doctor has their own independent schedule.</p></div>
+      <div class="feat"><div class="feat-icon" style="background:rgba(124,58,237,.07);">📋</div><h3>Admin Dashboard</h3><p>Full overview of all users, appointments, stats, and reminder controls.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="tech-section">
+  <div class="container">
+    <div class="section-label">Technologies</div>
+    <h2 style="font-size:1.6rem;letter-spacing:-.3px;margin-bottom:.4rem;">Previous → Upgraded</h2>
+    <p style="color:var(--muted);margin-bottom:1.5rem;font-size:.9rem;">Old CLI stack upgraded to a full production web app.</p>
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+      <div>
+        <p style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.7rem;">Previous (CLI)</p>
+        <div class="tech-grid">
+          <span class="tech-pill">Python</span><span class="tech-pill">SQLite</span>
+          <span class="tech-pill">dataclasses</span><span class="tech-pill">datetime</span>
+          <span class="tech-pill">argparse</span>
+        </div>
+      </div>
+      <div>
+        <p style="font-size:.78rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.7rem;">New Additions</p>
+        <div class="tech-grid">
+          <span class="tech-pill new">Flask</span><span class="tech-pill new">Jinja2</span>
+          <span class="tech-pill new">Werkzeug</span><span class="tech-pill new">smtplib</span>
+          <span class="tech-pill new">Claude AI API</span><span class="tech-pill new">Google Maps</span>
+          <span class="tech-pill new">JavaScript (ES6)</span><span class="tech-pill new">HTML5/CSS3</span>
+          <span class="tech-pill new">OTP Auth</span><span class="tech-pill new">REST API</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

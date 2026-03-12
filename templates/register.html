@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Register – MediBook{% endblock %}
+{% block head %}
+<style>
+.auth-wrap{min-height:calc(100vh - 62px);display:flex;align-items:center;justify-content:center;padding:3rem 1.5rem;}
+.auth-box{width:100%;max-width:480px;}
+.auth-head{margin-bottom:1.8rem;}
+.auth-head h1{font-size:1.9rem;letter-spacing:-.5px;margin-bottom:.3rem;}
+.auth-head p{color:var(--muted);font-size:.92rem;}
+.auth-foot{text-align:center;margin-top:1.25rem;font-size:.85rem;color:var(--muted);}
+.auth-foot a{color:var(--accent);text-decoration:none;font-weight:600;}
+.req{color:var(--red);margin-left:2px;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-head">
+      <h1>Create account</h1>
+      <p>Join MediBook — it's free and takes 30 seconds.</p>
+    </div>
+    <div class="card">
+      <form method="POST">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Full Name <span class="req">*</span></label>
+            <input type="text" name="name" placeholder="Bharath Kumar" required autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label>Age</label>
+            <input type="number" name="age" placeholder="25" min="1" max="120">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" name="phone" placeholder="+91 98765 43210">
+        </div>
+        <div class="form-group">
+          <label>Email Address <span class="req">*</span></label>
+          <input type="email" name="email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="divider">set password</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Password <span class="req">*</span></label>
+            <input type="password" name="password" placeholder="Min 6 chars" required>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password <span class="req">*</span></label>
+            <input type="password" name="confirm_password" placeholder="Repeat" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-wide" style="margin-top:.4rem;">
+          Create Account & Send OTP →
+        </button>
+      </form>
+    </div>
+    <div class="auth-foot">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></div>
+  </div>
+</div>
+{% endblock %}

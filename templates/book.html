@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}Book Appointment – MediBook{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+.book-grid{display:grid;grid-template-columns:1fr 360px;gap:2rem;align-items:start;}
+.book-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.75rem;}
+.book-card h2{font-size:1.25rem;margin-bottom:1.5rem;letter-spacing:-.3px;}
+/* Slots */
+.slots-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.slots-legend{display:flex;gap:1rem;font-size:.78rem;color:var(--muted);}
+.slots-legend span{display:flex;align-items:center;gap:.35rem;}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:.5rem;margin-bottom:1.5rem;}
+.slot-btn{
+  padding:.5rem .4rem;border-radius:8px;font-size:.8rem;font-weight:600;
+  border:1px solid var(--border);background:var(--surf2);color:var(--text);
+  cursor:pointer;text-align:center;transition:all .15s;
+}
+.slot-btn:hover:not(.booked){border-color:var(--accent);color:var(--accent);}
+.slot-btn.booked{background:rgba(244,63,94,.07);border-color:rgba(244,63,94,.2);color:var(--red);cursor:not-allowed;opacity:.6;}
+.slot-btn.selected{background:rgba(0,200,240,.15);border-color:var(--accent);color:var(--accent);}
+/* Date + Doctor picker */
+.filter-row{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+.filter-row input,.filter-row select{
+  background:var(--surf2);border:1px solid var(--border);border-radius:9px;
+  padding:.6rem .9rem;color:var(--text);font-family:'Instrument Sans',sans-serif;
+  font-size:.88rem;outline:none;transition:all .18s;
+}
+.filter-row input:focus,.filter-row select:focus{border-color:var(--accent);}
+/* AI panel */
+.ai-panel{background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(0,200,240,.05));border:1px solid rgba(124,58,237,.2);border-radius:14px;padding:1.5rem;margin-bottom:1.25rem;}
+.ai-panel h3{font-size:.95rem;margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem;}
+.ai-chat{display:flex;flex-direction:column;gap:.75rem;margin-top:1rem;}
+.ai-bubble-user{background:rgba(0,200,240,.1);border:1px solid rgba(0,200,240,.15);border-radius:12px 12px 4px 12px;padding:.75rem 1rem;font-size:.84rem;color:var(--accent);align-self:flex-end;max-width:90%;}
+.ai-bubble-bot{background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);border-radius:12px 12px 12px 4px;padding:.85rem 1rem;font-size:.84rem;color:var(--text);align-self:flex-start;max-width:100%;line-height:1.7;}
+.ai-bubble-bot h1,.ai-bubble-bot h2,.ai-bubble-bot h3{font-family:'Syne',sans-serif;font-size:.9rem;color:var(--accent);margin:.6rem 0 .3rem;}
+.ai-bubble-bot p{margin:.3rem 0;}
+.ai-bubble-bot ul,.ai-bubble-bot ol{padding-left:1.25rem;margin:.3rem 0;}
+.ai-bubble-bot li{margin:.2rem 0;}
+.ai-bubble-bot strong{color:var(--text);font-weight:700;}
+.ai-bubble-bot em{color:var(--muted);}
+.ai-bubble-bot code{background:rgba(0,0,0,.3);padding:.1rem .35rem;border-radius:4px;font-size:.8rem;}
+.ai-typing{display:none;align-items:center;gap:.35rem;padding:.6rem .9rem;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.15);border-radius:12px;font-size:.8rem;color:var(--muted);}
+.ai-typing.show{display:flex;}
+.typing-dot{width:7px;height:7px;border-radius:50%;background:var(--violet);animation:tdot 1.2s infinite;}
+.typing-dot:nth-child(2){animation-delay:.2s;}
+.typing-dot:nth-child(3){animation-delay:.4s;}
+@keyframes tdot{0%,80%,100%{opacity:.2;transform:scale(.8);}40%{opacity:1;transform:scale(1);}}
+/* Map */
+.map-wrap{border-radius:12px;overflow:hidden;border:1px solid var(--border);margin-bottom:1.25rem;}
+.map-wrap iframe{width:100%;height:220px;border:none;display:block;}
+.waitlist-btn{width:100%;margin-top:.6rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page">
+<div class="container">
+  <div style="margin-bottom:1.75rem;">
+    <h1 style="font-size:1.8rem;letter-spacing:-.4px;">Book Appointment</h1>
+    <p style="color:var(--muted);font-size:.92rem;margin-top:.3rem;">Select a doctor, pick a date, choose an available slot.</p>
+  </div>
+
+  <div class="book-grid">
+    <!-- LEFT: form -->
+    <div>
+      <div class="book-card" style="margin-bottom:1.25rem;">
+        <h2>1. Select Doctor & Date</h2>
+        <div class="filter-row">
+          <select id="doctorSelect" onchange="refreshSlots()">
+            {% for d in doctors %}
+            <option value="{{ d.id }}" {{ 'selected' if d.id==selected_doctor }}>{{ d.avatar }} {{ d.name }} – {{ d.specialty }}</option>
+            {% endfor %}
+          </select>
+          <input type="date" id="dateSelect" value="{{ selected_date }}" min="{{ now }}" onchange="refreshSlots()">
+        </div>
+
+        <div class="slots-header">
+          <h2 style="font-size:1rem;margin:0;">2. Pick a Time Slot</h2>
+          <div class="slots-legend">
+            <span><span class="dot" style="background:var(--surf2);border:1px solid var(--border);"></span>Available</span>
+            <span><span class="dot" style="background:rgba(244,63,94,.3);"></span>Booked</span>
+            <span><span class="dot" style="background:rgba(0,200,240,.3);"></span>Selected</span>
+          </div>
+        </div>
+
+        <div class="slot-grid" id="slotGrid">
+          {% for s in slots %}
+          <div class="slot-btn {{ 'booked' if s.booked }}"
+               data-start="{{ s.start }}" data-end="{{ s.end }}"
+               onclick="{{ '' if s.booked else 'selectSlot(this)' }}">
+            {{ s.start }}<br><small>{{ s.end }}</small>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Form details -->
+      <div class="book-card">
+        <h2>3. Appointment Details</h2>
+        <form method="POST" id="bookForm">
+          <input type="hidden" name="doctor_id" id="fDoctorId" value="{{ selected_doctor }}">
+          <input type="hidden" name="date"       id="fDate"     value="{{ selected_date }}">
+          <input type="hidden" name="start_time" id="fStart">
+          <input type="hidden" name="end_time"   id="fEnd">
+
+          <div class="form-group">
+            <label>Appointment Title *</label>
+            <input type="text" name="title" placeholder="e.g. Annual checkup, Back pain consult" required>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Category</label>
+              <select name="category">
+                {% for c in categories %}<option>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Location</label>
+              <input type="text" name="location" id="locationInput" placeholder="Apollo Hospital, Hyderabad" value="Apollo Hospital, Hyderabad">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notes (optional)</label>
+            <textarea name="notes" rows="2" placeholder="Symptoms, questions for the doctor…"></textarea>
+          </div>
+
+          <div id="slotWarning" style="display:none;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);border-radius:9px;padding:.7rem 1rem;font-size:.84rem;color:var(--red);margin-bottom:1rem;">
+            ⚠️ Please select a time slot above before booking.
+          </div>
+          <div id="selectedSlotInfo" style="display:none;background:rgba(0,200,240,.07);border:1px solid rgba(0,200,240,.2);border-radius:9px;padding:.7rem 1rem;font-size:.84rem;color:var(--accent);margin-bottom:1rem;">
+            ✓ Selected: <strong id="slotInfoText"></strong>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-wide" onclick="return validateForm()">
+            Confirm Booking →
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- RIGHT: sidebar -->
+    <div>
+      <!-- AI Assistant -->
+      <div class="ai-panel">
+        <h3>🤖 AI Health Assistant</h3>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:.9rem;">Ask any health or appointment related question.</p>
+        <textarea id="symptomsInput" rows="3" style="width:100%;background:rgba(0,0,0,.2);border:1px solid rgba(124,58,237,.25);border-radius:9px;padding:.65rem .9rem;color:var(--text);font-family:'Instrument Sans',sans-serif;font-size:.86rem;resize:none;outline:none;transition:border-color .2s;" placeholder="e.g. Which specialist should I see for a headache?"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='rgba(124,58,237,.25)'"></textarea>
+        <button id="askAiBtn" class="btn btn-ghost" style="width:100%;margin-top:.6rem;justify-content:center;">
+          Ask AI →
+        </button>
+        <div class="ai-typing" id="aiTyping">
+          <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+          <span style="margin-left:.2rem;">AI is thinking…</span>
+        </div>
+        <div class="ai-chat" id="aiChat"></div>
+      </div>
+
+      <!-- Map -->
+      <div class="book-card">
+        <h3 style="font-size:.95rem;margin-bottom:.9rem;">📍 Clinic Location</h3>
+        <div class="map-wrap" id="mapWrap">
+          <iframe id="mapFrame"
+            src="https://maps.google.com/maps?q=Apollo+Hospital+Hyderabad&output=embed"
+            allowfullscreen loading="lazy">
+          </iframe>
+        </div>
+        <p style="font-size:.8rem;color:var(--muted);" id="mapLabel">Apollo Hospital, Hyderabad</p>
+      </div>
+
+      <!-- Waitlist card (shown after selecting a booked slot) -->
+      <div class="book-card" id="waitlistCard" style="display:none;margin-top:1.25rem;">
+        <h3 style="font-size:.95rem;margin-bottom:.6rem;">⏳ This slot is booked</h3>
+        <p style="font-size:.83rem;color:var(--muted);margin-bottom:.9rem;">Join the waitlist — you'll get notified if it opens up.</p>
+        <form method="POST" action="{{ url_for('join_waitlist') }}">
+          <input type="hidden" name="doctor_id" id="wlDoctor">
+          <input type="hidden" name="date"       id="wlDate">
+          <input type="hidden" name="start_time" id="wlStart">
+          <button type="submit" class="btn btn-ghost waitlist-btn">Join Waitlist</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+let selectedStart = '', selectedEnd = '';
+
+function selectSlot(el) {
+  document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedStart = el.dataset.start;
+  selectedEnd   = el.dataset.end;
+  document.getElementById('fStart').value = selectedStart;
+  document.getElementById('fEnd').value   = selectedEnd;
+  document.getElementById('fDate').value  = document.getElementById('dateSelect').value;
+  document.getElementById('fDoctorId').value = document.getElementById('doctorSelect').value;
+  document.getElementById('slotWarning').style.display = 'none';
+  document.getElementById('selectedSlotInfo').style.display = 'block';
+  document.getElementById('slotInfoText').textContent = selectedStart + ' – ' + selectedEnd;
+  document.getElementById('waitlistCard').style.display = 'none';
+}
+
+function selectBookedSlot(el) {
+  const wc = document.getElementById('waitlistCard');
+  wc.style.display = 'block';
+  document.getElementById('wlDoctor').value = document.getElementById('doctorSelect').value;
+  document.getElementById('wlDate').value   = document.getElementById('dateSelect').value;
+  document.getElementById('wlStart').value  = el.dataset.start;
+}
+
+function validateForm() {
+  if (!document.getElementById('fStart').value) {
+    document.getElementById('slotWarning').style.display = 'block';
+    window.scrollTo({top:0,behavior:'smooth'});
+    return false;
+  }
+  return true;
+}
+
+async function refreshSlots() {
+  const date   = document.getElementById('dateSelect').value;
+  const doctor = document.getElementById('doctorSelect').value;
+  document.getElementById('fDate').value     = date;
+  document.getElementById('fDoctorId').value = doctor;
+  document.getElementById('selectedSlotInfo').style.display = 'none';
+  document.getElementById('waitlistCard').style.display = 'none';
+  selectedStart = ''; selectedEnd = '';
+  document.getElementById('fStart').value = '';
+  document.getElementById('fEnd').value   = '';
+  try {
+    const res = await fetch(`/api/slots?date=${date}&doctor=${doctor}`);
+    const { slots } = await res.json();
+    renderSlots(slots);
+  } catch(e) {
+    console.error('Failed to refresh slots:', e);
+  }
+}
+
+function renderSlots(slots) {
+  const grid = document.getElementById('slotGrid');
+  grid.innerHTML = slots.map(s => `
+    <div class="slot-btn ${s.booked ? 'booked' : ''}"
+         data-start="${s.start}" data-end="${s.end}">
+      ${s.start}<br><small>${s.end}</small>
+    </div>
+  `).join('');
+}
+
+async function getAISuggestion() {
+  const symptoms = document.getElementById('symptomsInput').value.trim();
+  if (!symptoms) { alert('Please describe your symptoms first.'); return; }
+
+  const chat   = document.getElementById('aiChat');
+  const typing = document.getElementById('aiTyping');
+
+  // Show user bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'ai-bubble-user';
+  userBubble.textContent = symptoms;
+  chat.appendChild(userBubble);
+
+  // Show typing indicator
+  typing.classList.add('show');
+  chat.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  try {
+    const res = await fetch('/api/ai-suggest', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ symptoms })
+    });
+
+    const clone = res.clone();
+    let msg = 'No response received.';
+
+    if (res.ok) {
+      try {
+        const data = await res.json();
+        msg = data.suggestion || data.error || msg;
+      } catch (_) {
+        const text = await clone.text();
+        msg = text || msg;
+      }
+    } else {
+      const errText = await clone.text();
+      msg = `Server error ${res.status}: ${errText}`;
+    }
+
+    // Bot bubble with markdown rendered
+    const botBubble = document.createElement('div');
+    botBubble.className = 'ai-bubble-bot';
+    botBubble.innerHTML = marked.parse(msg);
+    typing.classList.remove('show');
+    chat.appendChild(botBubble);
+    botBubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Clear input
+    document.getElementById('symptomsInput').value = '';
+  } catch(e) {
+    typing.classList.remove('show');
+    const errBubble = document.createElement('div');
+    errBubble.className = 'ai-bubble-bot';
+    errBubble.style.color = 'var(--red)';
+    errBubble.textContent = 'Could not reach AI. ' + (e?.message || e);
+    chat.appendChild(errBubble);
+  }
+}
+
+function initListeners() {
+  // Slot click handling (delegated)
+  const slotGrid = document.getElementById('slotGrid');
+  slotGrid?.addEventListener('click', e => {
+    const btn = e.target.closest('.slot-btn');
+    if (!btn) return;
+    if (btn.classList.contains('booked')) {
+      selectBookedSlot(btn);
+    } else {
+      selectSlot(btn);
+    }
+  });
+
+  // Ask AI button
+  const askBtn = document.getElementById('askAiBtn');
+  askBtn?.addEventListener('click', getAISuggestion);
+
+  // Submit on Ctrl+Enter
+  const symptomsInput = document.getElementById('symptomsInput');
+  symptomsInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      getAISuggestion();
+    }
+  });
+
+  // Map update on location change
+  const locationInput = document.getElementById('locationInput');
+  locationInput?.addEventListener('change', e => {
+    const q = encodeURIComponent(e.target.value);
+    document.getElementById('mapFrame').src = `https://maps.google.com/maps?q=${q}&output=embed`;
+    document.getElementById('mapLabel').textContent = e.target.value;
+  });
+}
+
+function initPage() {
+  initListeners();
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+</script>
+{% endblock %}

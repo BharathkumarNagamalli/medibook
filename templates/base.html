@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{% block title %}MediBook{% endblock %}</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#06090f;--surf:#0c1219;--surf2:#111a25;--border:#1a2840;
+  --accent:#00c8f0;--violet:#7c3aed;--green:#00e5a0;--amber:#fbbf24;
+  --red:#f43f5e;--text:#ddeeff;--muted:#4a6a8a;--card:#0b1420;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:'Instrument Sans',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 10% -10%,rgba(0,200,240,.07) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 110%,rgba(124,58,237,.06) 0%,transparent 60%);
+}
+/* NAV */
+nav{
+  height:62px;background:rgba(6,9,15,.85);backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--border);padding:0 2rem;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:200;
+}
+.logo{
+  font-family:'Syne',sans-serif;font-size:1.35rem;font-weight:800;
+  background:linear-gradient(120deg,var(--accent),#60a5fa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.logo em{-webkit-text-fill-color:var(--green);font-style:normal;}
+.nav-right{display:flex;align-items:center;gap:.4rem;}
+.nav-right a{
+  color:var(--muted);text-decoration:none;padding:.38rem .9rem;
+  border-radius:8px;font-size:.88rem;font-weight:500;transition:all .18s;
+}
+.nav-right a:hover{color:var(--text);background:var(--surf2);}
+/* BUTTONS */
+.btn{
+  display:inline-flex;align-items:center;gap:.35rem;
+  padding:.5rem 1.25rem;border-radius:9px;border:none;cursor:pointer;
+  font-family:'Instrument Sans',sans-serif;font-size:.88rem;font-weight:600;
+  text-decoration:none;transition:all .18s;
+}
+.btn-primary{background:var(--accent);color:#020a0f;}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 22px rgba(0,200,240,.35);}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-danger{background:var(--red);color:#fff;}
+.btn-danger:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(244,63,94,.3);}
+.btn-green{background:var(--green);color:#020a0f;}
+.btn-sm{padding:.3rem .8rem;font-size:.8rem;}
+.btn-wide{width:100%;justify-content:center;padding:.75rem;}
+/* LAYOUT */
+.page{padding:2.5rem 0 4rem;}
+.container{max-width:1080px;margin:0 auto;padding:0 1.5rem;}
+.container-sm{max-width:500px;margin:0 auto;padding:0 1.5rem;}
+/* CARD */
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:2rem;
+}
+/* FORM */
+.form-group{margin-bottom:1.2rem;}
+.form-group label{
+  display:block;font-size:.75rem;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.09em;margin-bottom:.45rem;
+}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;background:var(--surf2);border:1px solid var(--border);
+  border-radius:9px;padding:.7rem 1rem;color:var(--text);
+  font-family:'Instrument Sans',sans-serif;font-size:.92rem;
+  transition:all .18s;outline:none;
+}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,200,240,.09);
+}
+.form-group input::placeholder{color:var(--muted);}
+.form-group select option{background:var(--surf2);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+/* TYPE */
+h1,h2,h3{font-family:'Syne',sans-serif;}
+h1{font-weight:800;}h2{font-weight:700;}h3{font-weight:600;}
+/* BADGE */
+.badge{
+  display:inline-block;padding:.18rem .6rem;border-radius:20px;
+  font-size:.72rem;font-weight:700;letter-spacing:.03em;
+}
+.badge-green{background:rgba(0,229,160,.12);color:var(--green);}
+.badge-red{background:rgba(244,63,94,.12);color:var(--red);}
+.badge-blue{background:rgba(0,200,240,.12);color:var(--accent);}
+.badge-amber{background:rgba(251,191,36,.12);color:var(--amber);}
+/* FLASH */
+.flashes{position:fixed;top:72px;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;}
+.flash{
+  padding:.72rem 1.1rem;border-radius:10px;font-size:.86rem;font-weight:500;
+  max-width:340px;display:flex;align-items:center;gap:.55rem;
+  border:1px solid;animation:fin .28s ease;
+}
+.flash.success{background:rgba(0,229,160,.1);border-color:rgba(0,229,160,.25);color:var(--green);}
+.flash.error{background:rgba(244,63,94,.1);border-color:rgba(244,63,94,.25);color:var(--red);}
+@keyframes fin{from{transform:translateX(18px);opacity:0}to{transform:none;opacity:1}}
+/* DIVIDER */
+.divider{display:flex;align-items:center;gap:.9rem;color:var(--muted);font-size:.78rem;margin:1.25rem 0;}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border);}
+/* SECTION LABEL */
+.section-label{font-size:.73rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:.5rem;}
+/* RESPONSIVE */
+@media(max-width:640px){
+  .form-grid{grid-template-columns:1fr;}
+  nav{padding:0 1rem;}
+  .card{padding:1.25rem;}
+}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<nav>
+  <div class="logo">Medi<em>Book</em></div>
+  <div class="nav-right">
+    {% if session.user_id %}
+      {% if session.is_admin %}
+        <a href="{{ url_for('admin_dashboard') }}">Admin</a>
+      {% endif %}
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('profile') }}">Profile</a>
+      <a href="{{ url_for('book') }}" class="btn btn-primary btn-sm" style="margin-left:.25rem;">+ Book</a>
+      <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+    {% else %}
+      <a href="{{ url_for('login') }}">Login</a>
+      <a href="{{ url_for('register') }}" class="btn btn-primary btn-sm">Register</a>
+    {% endif %}
+  </div>
+</nav>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}
+<div class="flashes">
+  {% for cat,msg in msgs %}
+  <div class="flash {{cat}}">{{ '✓' if cat=='success' else '!' }} {{msg}}</div>
+  {% endfor %}
+</div>
+<script>setTimeout(()=>{document.querySelectorAll('.flash').forEach(e=>{e.style.transition='opacity .4s';e.style.opacity=0;setTimeout(()=>e.remove(),400);});},3200);</script>
+{% endif %}{% endwith %}
+
+{% block content %}{% endblock %}
+</body>
+</html>
