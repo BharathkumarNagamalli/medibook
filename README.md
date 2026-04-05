@@ -54,8 +54,8 @@ This project demonstrates a fully functional, modern web application stack, inte
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YourUsername/MediBook.git
-cd MediBook
+git clone https://github.com/BharathkumarNagamalli/medibook.git
+cd medibook
 ```
 
 ### 2. Install dependencies
