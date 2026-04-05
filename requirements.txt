@@ -5,3 +5,8 @@ python-multipart
 passlib[bcrypt]
 itsdangerous
 werkzeug
+google-generativeai
+anthropic
+python-dotenv
+aiofiles
+httpx
